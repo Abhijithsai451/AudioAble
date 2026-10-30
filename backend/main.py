@@ -47,6 +47,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 job_status = {}
 executor = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
@@ -152,7 +153,14 @@ async def get_status(file_id: str):
             raise HTTPException(status_code=404, detail="Job not found")
 
         # If it exists on disk but not in memory, it was a previous session
-        # Mark as completed since the text was already extracted
         job_status[file_id] = {"status": "completed", "progress": 100, "total": 0, "error": None}
 
-    return job_status.get(file_id)
+    # Try to find the extension of the original file
+    extension = "pdf" # default
+    for filename in os.listdir(UPLOAD_DIR):
+        if filename.startswith(file_id) and not filename.endswith(".json"):
+            extension = filename.split(".")[-1]
+            break
+
+    status = job_status.get(file_id)
+    return {**status, "extension": extension}

@@ -14,7 +14,7 @@ export default function Home() {
   const [currentChunk, setCurrentChunk] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState<{ progress: number; total: number; status: string } | null>(null);
+  const [processingStatus, setProcessingStatus] = useState<{ progress: number; total: number; status: string; extension?: string } | null>(null);
   const [hasText, setHasText] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -193,58 +193,87 @@ export default function Home() {
     }
 
     return (
-      <div className="relative w-full max-w-xl bg-white rounded-r-2xl rounded-l-sm shadow-xl border-l-[12px] border-stone-800 p-8 md:p-12 min-h-[400px] flex flex-col justify-between transition-all">
-        <div className="flex flex-col items-center gap-8 md:gap-12">
-          <div className="flex items-center gap-2 text-amber-700 font-bold tracking-widest uppercase text-[10px] md:text-xs">
-            {processingStatus?.status === 'completed' ? (
-              <><CheckCircle2 size={14} /> Ready for Listening</>
-            ) : (
-              <><Loader2 size={14} className="animate-spin" /> Processing Audio in Background</>
-            )}
-          </div>
-
-          <div className="text-center w-full">
-            <div className="text-stone-400 italic text-xs mb-4 md:mb-8">Page {currentChunk + 1} of {chunks.length}</div>
-            <p className="text-xl md:text-3xl font-medium text-stone-800 leading-relaxed transition-opacity duration-500 px-2">
-              {chunks[currentChunk]}
-            </p>
-          </div>
+      <div className="flex flex-col lg:flex-row gap-8 w-full max-w-6xl h-[80vh] animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* PDF Preview Section */}
+        <div className="flex-1 bg-stone-200 rounded-2xl overflow-hidden shadow-inner border border-stone-300 relative flex flex-col">
+          {processingStatus?.extension === 'pdf' ? (
+            <>
+              <iframe
+                src={`${API_BASE}/uploads/${fileId}.pdf#toolbar=0`}
+                className="w-full h-full border-none"
+                title="PDF Preview"
+              />
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-stone-800/80 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-medium flex items-center gap-4 shadow-xl">
+                <span className="opacity-70">Scroll to read</span>
+                <div className="w-px h-3 bg-white/20" />
+                <span>PDF Mode Active</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-stone-500 p-8 text-center">
+              <BookOpen size={48} className="mb-4 opacity-20" />
+              <p className="font-medium">Preview unavailable for this file type</p>
+              <p className="text-sm opacity-60">PDFs are supported for visual preview</p>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center justify-between pt-8 border-t border-stone-100">
-          <button
-            onClick={() => {
-              setIsPlaying(false);
-              setCurrentChunk(prev => Math.max(0, prev - 1));
-            }}
-            disabled={currentChunk === 0}
-            className="p-3 md:p-5 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition disabled:opacity-20 transform hover:scale-110"
-          >
-            <SkipBack size={24} className="md:w-8 md:h-8" />
-          </button>
+        {/* Audio Control Section */}
+        <div className="w-full lg:w-96 bg-white rounded-2xl shadow-xl border-l-[12px] border-stone-800 p-6 md:p-8 flex flex-col justify-between transition-all border-r border-stone-200">
+          <div className="flex flex-col items-center gap-6">
+            <div className="flex items-center gap-2 text-amber-700 font-bold tracking-widest uppercase text-[10px] md:text-xs">
+              {processingStatus?.status === 'completed' ? (
+                <><CheckCircle2 size={14} /> Ready for Listening</>
+              ) : (
+                <><Loader2 size={14} className="animate-spin" /> Processing Audio</>
+              )}
+            </div>
 
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="p-6 md:p-8 rounded-full bg-stone-800 text-white hover:bg-stone-700 shadow-lg transition transform hover:scale-110 active:scale-95"
-          >
-            {isPlaying ? <Pause size={32} className="md:w-10 md:h-10" /> : <Play size={32} className="md:w-10 md:h-10" />}
-          </button>
+            <div className="text-center w-full">
+              <div className="text-stone-400 italic text-xs mb-4">Page {currentChunk + 1} of {chunks.length}</div>
+              <p className="text-lg md:text-xl font-medium text-stone-800 leading-relaxed transition-opacity duration-500 px-2">
+                {chunks[currentChunk]}
+              </p>
+            </div>
+          </div>
 
-          <button
-            onClick={() => {
-              setIsPlaying(false);
-              setCurrentChunk(prev => Math.min(chunks.length - 1, prev + 1));
-            }}
-            disabled={currentChunk === chunks.length - 1}
-            className="p-3 md:p-5 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition disabled:opacity-20 transform hover:scale-110"
-          >
-            <SkipForward size={24} className="md:w-8 md:h-8" />
-          </button>
-        </div>
+          <div className="flex flex-col gap-8">
+            <div className="flex items-center justify-between px-2">
+              <button
+                onClick={() => {
+                  setIsPlaying(false);
+                  setCurrentChunk(prev => Math.max(0, prev - 1));
+                }}
+                disabled={currentChunk === 0}
+                className="p-3 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition disabled:opacity-20 transform hover:scale-110"
+              >
+                <SkipBack size={24} />
+              </button>
 
-        <div className="mt-8 md:mt-12 flex items-center justify-center gap-2 text-stone-400 text-[10px] md:text-xs italic">
-          <Volume2 size={12} />
-          <span className="text-sm">Hifi Audio Engine • Localized Processing</span>
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="p-6 rounded-full bg-stone-800 text-white hover:bg-stone-700 shadow-lg transition transform hover:scale-110 active:scale-95"
+              >
+                {isPlaying ? <Pause size={32} /> : <Play size={32} />}
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsPlaying(false);
+                  setCurrentChunk(prev => Math.min(chunks.length - 1, prev + 1));
+                }}
+                disabled={currentChunk === chunks.length - 1}
+                className="p-3 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition disabled:opacity-20 transform hover:scale-110"
+              >
+                <SkipForward size={24} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 text-stone-400 text-[10px] md:text-xs italic">
+              <Volume2 size={12} />
+              <span>Hifi Audio Engine • Localized Processing</span>
+            </div>
+          </div>
         </div>
       </div>
     );

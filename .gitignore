@@ -1,4 +1,7 @@
 /uploads/
 /audio_chunks/
+/models/
 /frontend/node_modules/
 /frontend/.next/
+.idea/
+.DS_Store
