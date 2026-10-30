@@ -12,25 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.parser import extract_text
 from backend.tts_engine import generate_audio_chunk
 
-def split_text_into_chunks(text):
-    """Splits text into chunks of approximately 1000 characters, respecting paragraph boundaries."""
-    chunks = []
-    paragraphs = text.split("\n\n")
-    current_chunk = ""
-
-    for p in paragraphs:
-        if len(current_chunk) + len(p) < 1000:
-            current_chunk += p + "\n\n"
-        else:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-            current_chunk = p + "\n\n"
-
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-
-    return chunks
-
 app = FastAPI()
 
 app.add_middleware(
@@ -52,22 +33,14 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 job_status = {}
 executor = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
 
-async def process_book_task(file_id: str, file_path: str, extension: str, original_filename: str):
+async def process_book_task(file_id: str, chunks: list):
+    total = len(chunks)
+    job_status[file_id] = {"status": "processing", "progress": 0, "total": total, "error": None}
+
     try:
-        # Move extraction and chunking to the background
-        text = extract_text(file_path, extension)
-        chunks = split_text_into_chunks(text)
-        total = len(chunks)
-
-        chunks_path = os.path.join(UPLOAD_DIR, f"{file_id}_chunks.json")
-        with open(chunks_path, "w") as f:
-            json.dump({"filename": original_filename, "chunks": chunks}, f)
-
-        job_status[file_id] = {"status": "processing", "progress": 0, "total": total, "error": None}
-
         loop = asyncio.get_event_loop()
-        tasks = [loop.run_in_executor(executor, generate_audio_chunk, text_chunk, f"{file_id}_{i}")
-                 for i, text_chunk in enumerate(chunks)]
+        tasks = [loop.run_in_executor(executor, generate_audio_chunk, text, f"{file_id}_{i}")
+                 for i, text in enumerate(chunks)]
 
         for count, future in enumerate(asyncio.as_completed(tasks)):
             await future
@@ -99,33 +72,6 @@ async def list_books():
             })
     return books
 
-@app.delete("/delete/{file_id}")
-async def delete_book(file_id: str):
-    """Delete a book and all its associated audio chunks."""
-    try:
-        # 1. Delete the chunks metadata file
-        chunks_path = os.path.join(UPLOAD_DIR, f"{file_id}_chunks.json")
-        if os.path.exists(chunks_path):
-            os.remove(chunks_path)
-
-        # 2. Delete the original uploaded file (find it by ID)
-        for filename in os.listdir(UPLOAD_DIR):
-            if filename.startswith(file_id) and not filename.endswith(".json"):
-                os.remove(os.path.join(UPLOAD_DIR, filename))
-
-        # 3. Delete all generated audio chunks
-        for filename in os.listdir(AUDIO_DIR):
-            if filename.startswith(file_id):
-                os.remove(os.path.join(AUDIO_DIR, filename))
-
-        # 4. Remove from active memory
-        if file_id in job_status:
-            del job_status[file_id]
-
-        return {"message": "Book deleted successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting book: {str(e)}")
-
 @app.post("/upload")
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     file_id = str(uuid.uuid4())
@@ -136,31 +82,77 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Everything else happens in the background
-    background_tasks.add_task(process_book_task, file_id, file_path, extension, original_filename)
+    try:
+        text = extract_text(file_path, extension)
+        chunks = split_text_into_chunks(text)
 
-    return {
-        "file_id": file_id,
-        "status": "processing"
-    }
+        chunks_path = os.path.join(UPLOAD_DIR, f"{file_id}_chunks.json")
+        with open(chunks_path, "w") as f:
+            json.dump({"filename": original_filename, "chunks": chunks}, f)
+
+        background_tasks.add_task(process_book_task, file_id, chunks)
+
+        return {
+            "file_id": file_id,
+            "total_chunks": len(chunks),
+            "chunks": chunks,
+            "status": "processing",
+            "extension": extension
+        }
+    except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
 @app.get("/status/{file_id}")
 async def get_status(file_id: str):
     if file_id not in job_status:
-        # Recovery: check if the book exists on disk
         chunks_path = os.path.join(UPLOAD_DIR, f"{file_id}_chunks.json")
         if not os.path.exists(chunks_path):
             raise HTTPException(status_code=404, detail="Job not found")
 
-        # If it exists on disk but not in memory, it was a previous session
         job_status[file_id] = {"status": "completed", "progress": 100, "total": 0, "error": None}
 
-    # Try to find the extension of the original file
-    extension = "pdf" # default
+    status = job_status[file_id].copy()
+    extension = "unknown"
     for filename in os.listdir(UPLOAD_DIR):
         if filename.startswith(file_id) and not filename.endswith(".json"):
-            extension = filename.split(".")[-1]
+            extension = filename.split(".")[-1].lower()
             break
+    status["extension"] = extension
 
-    status = job_status.get(file_id)
-    return {**status, "extension": extension}
+    chunks_path = os.path.join(UPLOAD_DIR, f"{file_id}_chunks.json")
+    if os.path.exists(chunks_path):
+        with open(chunks_path, "r") as f:
+            data = json.load(f)
+            chunks = data["chunks"] if isinstance(data, dict) else data
+        return {**status, "chunks": chunks}
+
+    return status
+
+@app.get("/generate-chunk/{file_id}/{chunk_index}")
+async def get_chunk(file_id: str, chunk_index: int):
+    chunks_path = os.path.join(UPLOAD_DIR, f"{file_id}_chunks.json")
+    if not os.path.exists(chunks_//C/Users/abhijithsai/PycharmProjects/AudioAble/backend/main.py, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        text = extract_text(file_path, extension)
+        chunks = split_text_into_chunks(text)
+
+        chunks_path = os.path.join(UPLOAD_DIR, f"{file_id}_chunks.json")
+        with open(chunks_path, "w") as f:
+            json.dump(chunks, f)
+
+        background_tasks.add_task(process_book_task, file_id, chunks)
+
+        return {
+            "file_id": file_id,
+            "total_chunks": len(chunks),
+            "chunks": chunks,
+            "status": "processing"
+        }
+    except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
